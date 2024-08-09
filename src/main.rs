@@ -34,14 +34,13 @@ impl<Key: Default + Clone + Hashable + Debug + PartialEq, Value: Default + Clone
     fn debug_dump(&self) {
         for cell in self.cells.iter() {
             if cell.taken {
-                println!("{:?} -> {:?} -> {:?}", cell.key, cell.value, cell.taken);
+                println!("{:?} -> {:?}", cell.key, cell.value);
             } else {
                 println!("x");
             }
         }
     }
 
-    // TODO:
     fn extend(&mut self) {
         assert!(self.cells.len() > 0);
         let mut new_self = Self {
@@ -119,102 +118,123 @@ impl Hashable for String {
     }
 }
 
+impl Hashable for i32 {
+    fn hash(&self) -> usize {
+        *self as usize
+    }
+}
+
 fn main() {
-    println!();
+    // use std::collections::HashMap;
+    // let mut foo: HashMap<i32, i32> = HashMap::new();
+    let mut foo: HashBrown<i32, i32> = HashBrown::new();
+    for _ in 0..1_000_000 {
+        let key = rand::random::<i32>();
+        if let Some(value) = foo.get_mut(&key) {
+            *value += 1;
+        } else {
+            foo.insert(key, 1);
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    impl Hashable for i32 {
+    #[derive(Default, Clone, Debug, PartialEq)]
+    struct TestKey(String);
+
+    impl Hashable for TestKey {
         fn hash(&self) -> usize {
-            *self as usize
+            self.0.hash()
         }
     }
 
     #[test]
     fn test_new() {
-        let brownies: HashBrown<i32, String> = HashBrown::new();
-        assert_eq!(brownies.cells.len(), 8);
-        assert_eq!(brownies.taken_count, 0);
+        let hb: HashBrown<TestKey, i32> = HashBrown::new();
+        assert_eq!(hb.cells.len(), 8);
+        assert_eq!(hb.taken_count, 0);
     }
 
     #[test]
     fn test_insert_and_get() {
-        let mut brownies = HashBrown::<i32, String>::new();
-        brownies.insert(1, "one".to_string());
-        brownies.insert(2, "two".to_string());
+        let mut hb = HashBrown::new();
+        hb.insert(TestKey("key1".to_string()), 42);
+        hb.insert(TestKey("key2".to_string()), 24);
 
-        assert_eq!(brownies.get(&1), Some(&"one".to_string()));
-        assert_eq!(brownies.get(&2), Some(&"two".to_string()));
-        assert_eq!(brownies.get(&3), None);
+        assert_eq!(hb.get(&TestKey("key1".to_string())), Some(&42));
+        assert_eq!(hb.get(&TestKey("key2".to_string())), Some(&24));
+        assert_eq!(hb.get(&TestKey("key3".to_string())), None);
     }
 
     #[test]
-    fn test_insert_update() {
-        let mut brownies = HashBrown::<i32, String>::new();
-        brownies.insert(1, "one".to_string());
-        brownies.insert(1, "updated one".to_string());
+    fn test_update_existing_key() {
+        let mut hb = HashBrown::new();
+        hb.insert(TestKey("key1".to_string()), 42);
+        hb.insert(TestKey("key1".to_string()), 100);
 
-        assert_eq!(brownies.get(&1), Some(&"updated one".to_string()));
-    }
-
-    #[test]
-    fn test_get_mut() {
-        let mut brownies = HashBrown::<i32, String>::new();
-        brownies.insert(1, "one".to_string());
-
-        if let Some(value) = brownies.get_mut(&1) {
-            *value = "updated one".to_string();
-        }
-
-        assert_eq!(brownies.get(&1), Some(&"updated one".to_string()));
-    }
-
-    #[test]
-    fn test_get_index() {
-        let mut brownies = HashBrown::<i32, String>::new();
-        brownies.insert(1, "one".to_string());
-
-        assert!(brownies.get_index(&1).is_some());
-        assert!(brownies.get_index(&2).is_none());
-    }
-
-    #[test]
-    fn test_hash_collision() {
-        let mut brownies = HashBrown::<i32, String>::new();
-        brownies.insert(1, "one".to_string());
-        brownies.insert(9, "nine".to_string()); // This should cause a collision with 1
-
-        assert_eq!(brownies.get(&1), Some(&"one".to_string()));
-        assert_eq!(brownies.get(&9), Some(&"nine".to_string()));
+        assert_eq!(hb.get(&TestKey("key1".to_string())), Some(&100));
     }
 
     #[test]
     fn test_extend() {
-        let mut brownies = HashBrown::<i32, String>::new();
-        for i in 0..9 {
-            brownies.insert(i, i.to_string());
+        let mut hb = HashBrown::new();
+        for i in 0..10 {
+            hb.insert(TestKey(format!("key{}", i)), i);
         }
 
-        // The HashBrown should have extended its capacity
-        assert!(brownies.cells.len() > 8);
-
-        // Check if all inserted elements are still accessible
-        for i in 0..9 {
-            assert_eq!(brownies.get(&i), Some(&i.to_string()));
+        assert!(hb.cells.len() > 8);
+        for i in 0..10 {
+            assert_eq!(hb.get(&TestKey(format!("key{}", i))), Some(&i));
         }
     }
 
     #[test]
-    fn test_with_string_keys() {
-        let mut brownies = HashBrown::<String, i32>::new();
-        brownies.insert("one".to_string(), 1);
-        brownies.insert("two".to_string(), 2);
+    fn test_get_mut() {
+        let mut hb = HashBrown::new();
+        hb.insert(TestKey("key1".to_string()), 42);
 
-        assert_eq!(brownies.get(&"one".to_string()), Some(&1));
-        assert_eq!(brownies.get(&"two".to_string()), Some(&2));
-        assert_eq!(brownies.get(&"three".to_string()), None);
+        if let Some(value) = hb.get_mut(&TestKey("key1".to_string())) {
+            *value = 100;
+        }
+
+        assert_eq!(hb.get(&TestKey("key1".to_string())), Some(&100));
+    }
+
+    #[test]
+    fn test_collision_handling() {
+        #[derive(Default, Clone, Debug, PartialEq)]
+        struct CollisionKey(usize);
+
+        impl Hashable for CollisionKey {
+            fn hash(&self) -> usize {
+                self.0 % 8 // Force collisions in the initial 8 buckets
+            }
+        }
+
+        let mut hb = HashBrown::new();
+        for i in 0..20 {
+            hb.insert(CollisionKey(i), i as i32);
+        }
+
+        for i in 0..20 {
+            assert_eq!(hb.get(&CollisionKey(i)), Some(&(i as i32)));
+        }
+    }
+
+    #[test]
+    fn test_string_hash() {
+        let s1 = "Hello".to_string();
+        let s2 = "World".to_string();
+        assert_ne!(s1.hash(), s2.hash());
+    }
+
+    #[test]
+    fn test_i32_hash() {
+        let n1: i32 = 42;
+        let n2: i32 = -42;
+        assert_ne!(n1.hash(), n2.hash());
     }
 }
